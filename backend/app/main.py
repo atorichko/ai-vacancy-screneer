@@ -23,8 +23,9 @@ from app.schemas import (
 from app.storage import ensure_bucket, upload_bytes
 from app.parsers import parse_by_extension
 from app.tasks import analyze_candidate_task
+from app.config import settings
 
-app = FastAPI(title="Recruitment MVP")
+app = FastAPI(title="Recruitment MVP", root_path=settings.api_root_path)
 
 
 @app.on_event("startup")

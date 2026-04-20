@@ -22,6 +22,7 @@ class Settings(BaseSettings):
     polza_base_url: str = "https://polza.ai/api/v1"
     polza_api_key: str = ""
     polza_model: str = "gpt-4o-mini"
+    api_root_path: str = ""
 
     jwt_secret: str = "change-me"
     jwt_expire_minutes: int = 720

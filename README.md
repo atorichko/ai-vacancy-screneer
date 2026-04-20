@@ -92,4 +92,5 @@ bash deploy/deploy-vds.sh
 
 ```env
 NEXT_PUBLIC_API_URL=http://185.28.85.131/recruitment-mvp-api
+API_ROOT_PATH=/recruitment-mvp-api
 ```
