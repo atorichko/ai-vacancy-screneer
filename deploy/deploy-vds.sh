@@ -5,21 +5,27 @@ APP_DIR="${APP_DIR:-/var/www/recruitment-mvp}"
 REPO_URL="https://github.com/atorichko/ai-vacancy-screneer.git"
 BRANCH="${BRANCH:-main}"
 
-sudo apt-get update
-sudo apt-get install -y ca-certificates curl git
+if command -v sudo >/dev/null 2>&1; then
+  SUDO="sudo"
+else
+  SUDO=""
+fi
+
+$SUDO apt-get update
+$SUDO apt-get install -y ca-certificates curl git
 
 if ! command -v docker >/dev/null 2>&1; then
   curl -fsSL https://get.docker.com | sh
-  sudo usermod -aG docker "$USER" || true
+  $SUDO usermod -aG docker "$USER" || true
 fi
 
 if ! docker compose version >/dev/null 2>&1; then
-  sudo apt-get install -y docker-compose-plugin
+  $SUDO apt-get install -y docker-compose-plugin
 fi
 
 if [ ! -d "$APP_DIR/.git" ]; then
-  sudo mkdir -p "$(dirname "$APP_DIR")"
-  sudo chown -R "$USER:$USER" "$(dirname "$APP_DIR")"
+  $SUDO mkdir -p "$(dirname "$APP_DIR")"
+  $SUDO chown -R "$USER:$USER" "$(dirname "$APP_DIR")" || true
   git clone "$REPO_URL" "$APP_DIR"
 fi
 
@@ -34,5 +40,5 @@ if [ ! -f .env ]; then
   exit 1
 fi
 
-sudo docker compose up -d --build
-sudo docker compose ps
+$SUDO docker compose up -d --build
+$SUDO docker compose ps

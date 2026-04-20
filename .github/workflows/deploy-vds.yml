@@ -18,11 +18,16 @@ jobs:
           key: ${{ secrets.VDS_SSH_KEY }}
           port: ${{ secrets.VDS_PORT || 22 }}
           script: |
-            set -e
+            set -euo pipefail
+            if command -v sudo >/dev/null 2>&1; then
+              SUDO="sudo"
+            else
+              SUDO=""
+            fi
             APP_DIR="/var/www/recruitment-mvp"
             if [ ! -d "$APP_DIR/.git" ]; then
-              sudo mkdir -p /var/www
-              sudo chown -R $USER:$USER /var/www
+              $SUDO mkdir -p /var/www
+              $SUDO chown -R "$USER:$USER" /var/www || true
               git clone https://github.com/atorichko/ai-vacancy-screneer.git "$APP_DIR"
             fi
             cd "$APP_DIR"
