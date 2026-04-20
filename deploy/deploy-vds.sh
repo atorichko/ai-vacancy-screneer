@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-APP_DIR="/opt/ai-vacancy-screneer"
+APP_DIR="${APP_DIR:-/var/www/recruitment-mvp}"
 REPO_URL="https://github.com/atorichko/ai-vacancy-screneer.git"
 BRANCH="${BRANCH:-main}"
 
@@ -18,8 +18,8 @@ if ! docker compose version >/dev/null 2>&1; then
 fi
 
 if [ ! -d "$APP_DIR/.git" ]; then
-  sudo mkdir -p /opt
-  sudo chown -R "$USER:$USER" /opt
+  sudo mkdir -p "$(dirname "$APP_DIR")"
+  sudo chown -R "$USER:$USER" "$(dirname "$APP_DIR")"
   git clone "$REPO_URL" "$APP_DIR"
 fi
 

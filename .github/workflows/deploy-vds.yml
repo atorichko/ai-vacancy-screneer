@@ -19,10 +19,10 @@ jobs:
           port: ${{ secrets.VDS_PORT || 22 }}
           script: |
             set -e
-            APP_DIR="/opt/ai-vacancy-screneer"
+            APP_DIR="/var/www/recruitment-mvp"
             if [ ! -d "$APP_DIR/.git" ]; then
-              sudo mkdir -p /opt
-              sudo chown -R $USER:$USER /opt
+              sudo mkdir -p /var/www
+              sudo chown -R $USER:$USER /var/www
               git clone https://github.com/atorichko/ai-vacancy-screneer.git "$APP_DIR"
             fi
             cd "$APP_DIR"

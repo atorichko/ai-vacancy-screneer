@@ -78,9 +78,18 @@ docker compose up --build
 ### Первичный запуск вручную на VDS
 
 ```bash
-git clone https://github.com/atorichko/ai-vacancy-screneer.git /opt/ai-vacancy-screneer
-cd /opt/ai-vacancy-screneer
+git clone https://github.com/atorichko/ai-vacancy-screneer.git /var/www/recruitment-mvp
+cd /var/www/recruitment-mvp
 cp .env.example .env
 # заполните POLZA_API_KEY и другие переменные
 bash deploy/deploy-vds.sh
+```
+
+### Важно про переменные в Docker Compose
+
+- `api` и `worker` читают переменные из `.env` (а не из `.env.example`).
+- Для публикации под nginx-префиксом `/recruitment-mvp` выставьте:
+
+```env
+NEXT_PUBLIC_API_URL=http://185.28.85.131/recruitment-mvp-api
 ```

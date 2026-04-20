@@ -33,7 +33,7 @@ services:
     build:
       context: ./backend
     env_file:
-      - .env.example
+      - .env
     depends_on:
       - db
       - redis
@@ -48,7 +48,7 @@ services:
       context: ./backend
     command: celery -A app.celery_app worker --loglevel=info
     env_file:
-      - .env.example
+      - .env
     depends_on:
       - db
       - redis
@@ -60,7 +60,7 @@ services:
     build:
       context: ./frontend
     environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+      NEXT_PUBLIC_API_URL: ${NEXT_PUBLIC_API_URL:-http://localhost:8000}
     depends_on:
       - api
     ports:
