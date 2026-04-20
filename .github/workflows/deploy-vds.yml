@@ -1,0 +1,30 @@
+name: Deploy to VDS
+
+on:
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Deploy through SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VDS_HOST }}
+          username: ${{ secrets.VDS_USER }}
+          key: ${{ secrets.VDS_SSH_KEY }}
+          port: ${{ secrets.VDS_PORT || 22 }}
+          script: |
+            set -e
+            APP_DIR="/opt/ai-vacancy-screneer"
+            if [ ! -d "$APP_DIR/.git" ]; then
+              sudo mkdir -p /opt
+              sudo chown -R $USER:$USER /opt
+              git clone https://github.com/atorichko/ai-vacancy-screneer.git "$APP_DIR"
+            fi
+            cd "$APP_DIR"
+            chmod +x deploy/deploy-on-vds.sh
+            APP_DIR="$APP_DIR" BRANCH="main" bash deploy/deploy-on-vds.sh
