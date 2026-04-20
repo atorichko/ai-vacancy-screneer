@@ -94,3 +94,6 @@ bash deploy/deploy-vds.sh
 NEXT_PUBLIC_API_URL=http://185.28.85.131/recruitment-mvp-api
 API_ROOT_PATH=/recruitment-mvp-api
 ```
+
+Если порт `8000` на сервере занят, в текущем `docker-compose.yml` API опубликован как `8001:8000`.
+В этом случае в nginx для `/recruitment-mvp-api/` используйте upstream `http://127.0.0.1:8001/`.
