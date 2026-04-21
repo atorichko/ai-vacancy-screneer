@@ -37,7 +37,22 @@ class PositionProfile(Base):
     test_source_key = Column(String(255), nullable=False)
     position_struct = Column(JSON, nullable=False, default=dict)
     test_struct = Column(JSON, nullable=False, default=dict)
+    role_context = Column(Text, nullable=True)
     created_at = Column(DateTime, default=datetime.utcnow, nullable=False)
+
+    files = relationship("PositionProfileFile", back_populates="profile", cascade="all, delete-orphan")
+
+
+class PositionProfileFile(Base):
+    __tablename__ = "position_profile_files"
+
+    id = Column(Integer, primary_key=True, index=True)
+    profile_id = Column(Integer, ForeignKey("position_profiles.id"), nullable=False)
+    object_key = Column(String(255), nullable=False)
+    original_name = Column(String(255), nullable=False)
+    file_kind = Column(String(50), nullable=False)
+
+    profile = relationship("PositionProfile", back_populates="files")
 
 
 class CandidateCard(Base):
@@ -65,4 +80,11 @@ class CandidateTestFile(Base):
     candidate_id = Column(Integer, ForeignKey("candidate_cards.id"), nullable=False)
     object_key = Column(String(255), nullable=False)
     original_name = Column(String(255), nullable=False)
+
+
+class AppSetting(Base):
+    __tablename__ = "app_settings"
+
+    key = Column(String(128), primary_key=True)
+    value = Column(Text, nullable=False)
 

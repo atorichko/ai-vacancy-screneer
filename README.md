@@ -97,3 +97,23 @@ API_ROOT_PATH=/recruitment-mvp-api
 
 Если порт `8000` на сервере занят, в текущем `docker-compose.yml` API опубликован как `8001:8000`.
 В этом случае в nginx для `/recruitment-mvp-api/` используйте upstream `http://127.0.0.1:8001/`.
+
+### Готовый nginx-конфиг (главная страница остается на `/`)
+
+В проект добавлен пример: `deploy/nginx-recruitment-mvp.conf`.
+
+Он делает следующее:
+
+- `http://185.28.85.131/` — остается вашим текущим лендингом;
+- `http://185.28.85.131/recruitment-mvp` — фронтенд Recruitment MVP;
+- `http://185.28.85.131/recruitment-mvp/dashboard` — кабинет после авторизации;
+- `http://185.28.85.131/recruitment-mvp-api/docs` — Swagger backend.
+
+Применение на сервере:
+
+```bash
+sudo cp /var/www/recruitment-mvp/deploy/nginx-recruitment-mvp.conf /etc/nginx/sites-available/recruitment-mvp.conf
+sudo ln -sf /etc/nginx/sites-available/recruitment-mvp.conf /etc/nginx/sites-enabled/recruitment-mvp.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```

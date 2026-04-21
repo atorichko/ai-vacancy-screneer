@@ -32,3 +32,17 @@ def upload_bytes(data: bytes, original_name: str, folder: str) -> str:
 def read_text_object(key: str) -> str:
     obj = s3.get_object(Bucket=settings.s3_bucket, Key=key)
     return obj["Body"].read().decode("utf-8", errors="ignore")
+
+
+def read_bytes_object(key: str) -> bytes:
+    obj = s3.get_object(Bucket=settings.s3_bucket, Key=key)
+    return obj["Body"].read()
+
+
+def delete_object_s3(key: str) -> None:
+    if not key:
+        return
+    try:
+        s3.delete_object(Bucket=settings.s3_bucket, Key=key)
+    except ClientError:
+        pass

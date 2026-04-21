@@ -39,33 +39,64 @@ def build_position_and_test_struct(position_text: str, test_text: str) -> dict:
     return _chat_json(prompt)
 
 
-def analyze_candidate(
-    profile_json: dict,
+def _truncate(s: str, max_len: int) -> str:
+    if len(s) <= max_len:
+        return s
+    return s[:max_len] + "\n\n[… текст обрезан по лимиту …]"
+
+
+def _apply_unified_prompt(
+    template: str,
+    profile_json_str: str,
+    test_tasks: str,
     resume_text: str,
-    test_payload: dict,
+    candidate_test_assignment: str,
+    role_context: str,
+) -> str:
+    return (
+        template.replace("{{profile_json}}", _truncate(profile_json_str, 120_000))
+        .replace("{{test_tasks}}", _truncate(test_tasks, 120_000))
+        .replace("{{resume_text}}", _truncate(resume_text, 80_000))
+        .replace("{{candidate_test_assignment}}", _truncate(candidate_test_assignment, 250_000))
+        .replace("{{role_context}}", _truncate(role_context, 50_000))
+    )
+
+
+def _chat_markdown(user_prompt: str) -> str:
+    response = client.chat.completions.create(
+        model=settings.polza_model,
+        messages=[
+            {
+                "role": "system",
+                "content": (
+                    "Ты помощник рекрутера. Отвечай на русском языке в формате Markdown "
+                    "(заголовки #, таблицы, списки). Следуй структуре и требованиям из запроса пользователя. "
+                    "Не оборачивай ответ в JSON."
+                ),
+            },
+            {"role": "user", "content": user_prompt},
+        ],
+        temperature=0.2,
+    )
+    return (response.choices[0].message.content or "").strip()
+
+
+def analyze_candidate_unified(
+    profile_json_str: str,
+    test_tasks: str,
+    resume_text: str,
+    candidate_test_assignment: str,
+    role_context: str,
+    prompt_template: str,
 ) -> dict:
-    prompt = f"""
-Ты оцениваешь кандидата для рекрутера.
-Верни JSON:
-{{
- "short_report": "...",
- "full_report": "...",
- "strengths": ["..."],
- "risks": ["..."],
- "grey_zones": ["..."],
- "interview_questions": ["...", "..."],
- "resume_score": 0-100,
- "test_score": 0-100,
- "consistency_score": 0-100
-}}
-
-Профиль и шаблон теста:
-{json.dumps(profile_json, ensure_ascii=False)}
-
-Резюме:
-{resume_text[:18000]}
-
-Анализ блоков теста:
-{json.dumps(test_payload, ensure_ascii=False)[:18000]}
-"""
-    return _chat_json(prompt)
+    """Возвращает result для сохранения в БД: { \"markdown\": str }."""
+    prompt = _apply_unified_prompt(
+        prompt_template,
+        profile_json_str,
+        test_tasks,
+        resume_text,
+        candidate_test_assignment,
+        role_context,
+    )
+    text = _chat_markdown(prompt)
+    return {"markdown": text}
