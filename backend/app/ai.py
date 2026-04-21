@@ -52,6 +52,7 @@ def _apply_unified_prompt(
     resume_text: str,
     candidate_test_assignment: str,
     role_context: str,
+    candidate_context: str,
 ) -> str:
     return (
         template.replace("{{profile_json}}", _truncate(profile_json_str, 120_000))
@@ -59,6 +60,7 @@ def _apply_unified_prompt(
         .replace("{{resume_text}}", _truncate(resume_text, 80_000))
         .replace("{{candidate_test_assignment}}", _truncate(candidate_test_assignment, 250_000))
         .replace("{{role_context}}", _truncate(role_context, 50_000))
+        .replace("{{candidate_context}}", _truncate(candidate_context, 80_000))
     )
 
 
@@ -87,6 +89,7 @@ def analyze_candidate_unified(
     resume_text: str,
     candidate_test_assignment: str,
     role_context: str,
+    candidate_context: str,
     prompt_template: str,
 ) -> dict:
     """Возвращает result для сохранения в БД: { \"markdown\": str }."""
@@ -97,6 +100,7 @@ def analyze_candidate_unified(
         resume_text,
         candidate_test_assignment,
         role_context,
+        candidate_context,
     )
     text = _chat_markdown(prompt)
     return {"markdown": text}

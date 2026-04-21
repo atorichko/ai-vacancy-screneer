@@ -63,6 +63,9 @@ class CandidateOut(BaseModel):
     full_name: str
     email: EmailStr
     position_profile_id: int
+    position_profile_title: str | None = None
+    candidate_context: str | None = None
+    candidate_context_file_name: str | None = None
     status: CandidateStatus
     result: dict[str, Any] | None = None
     error: str | None = None
@@ -96,6 +99,9 @@ class CandidateDetailOut(BaseModel):
     full_name: str
     email: EmailStr
     position_profile_id: int
+    position_profile_title: str | None = None
+    candidate_context: str | None = None
+    candidate_context_file_name: str | None = None
     status: CandidateStatus
     result: dict[str, Any] | None = None
     error: str | None = None
@@ -107,7 +113,7 @@ class CandidateDetailOut(BaseModel):
 
 
 class PromptSettingsOut(BaseModel):
-    """Единый промпт анализа кандидата. Плейсхолдеры: {{profile_json}}, {{test_tasks}}, {{resume_text}}, {{candidate_test_assignment}}."""
+    """Единый промпт анализа кандидата. Плейсхолдеры: {{profile_json}}, {{test_tasks}}, {{resume_text}}, {{candidate_test_assignment}}, {{role_context}}, {{candidate_context}}."""
 
     candidate_analysis_prompt: str
 

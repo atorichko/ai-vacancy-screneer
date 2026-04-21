@@ -37,6 +37,18 @@ def _candidate_test_assignment_text(db, candidate_id: int) -> str:
     return "\n\n---\n\n".join(parts)
 
 
+def _candidate_context_text(card: CandidateCard) -> str:
+    """Дополнительный контекст кандидата: ручной текст + опциональный файл."""
+    parts: list[str] = []
+    text = (card.candidate_context or "").strip()
+    if text:
+        parts.append(f"### Комментарий рекрутера\n\n{text}")
+    if card.candidate_context_file_key and card.candidate_context_file_name:
+        body = parse_by_extension(card.candidate_context_file_name, _read_s3(card.candidate_context_file_key))
+        parts.append(f"### Файл с дополнительной информацией: {card.candidate_context_file_name}\n\n{body}")
+    return "\n\n---\n\n".join(parts)
+
+
 @celery.task(name="analyze_candidate_task")
 def analyze_candidate_task(candidate_id: int):
     db = SessionLocal()
@@ -60,6 +72,7 @@ def analyze_candidate_task(candidate_id: int):
         )
 
         role_context = (profile.role_context or "").strip()
+        candidate_context = _candidate_context_text(card)
 
         prompt_template = get_unified_analysis_prompt(db)
         result = analyze_candidate_unified(
@@ -68,6 +81,7 @@ def analyze_candidate_task(candidate_id: int):
             resume_text=resume_text,
             candidate_test_assignment=candidate_assignment,
             role_context=role_context,
+            candidate_context=candidate_context,
             prompt_template=prompt_template,
         )
         card.result = result

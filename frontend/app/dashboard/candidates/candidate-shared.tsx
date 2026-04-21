@@ -8,6 +8,9 @@ export type CandidateDetail = {
   full_name: string;
   email: string;
   position_profile_id: number;
+  position_profile_title?: string | null;
+  candidate_context?: string | null;
+  candidate_context_file_name?: string | null;
   status: string;
   created_at: string;
   result?: Record<string, unknown> | null;

@@ -15,9 +15,16 @@ type Props = {
   token: string;
   initialCandidateId: number | null;
   onCandidateCreated?: (id: number) => void;
+  mode?: "create_and_analyze" | "analyze_only";
 };
 
-export function CandidateCheckForms({ token, initialCandidateId, onCandidateCreated }: Props) {
+export function CandidateCheckForms({
+  token,
+  initialCandidateId,
+  onCandidateCreated,
+  mode = "create_and_analyze",
+}: Props) {
+  const isAnalyzeOnly = mode === "analyze_only";
   const [profiles, setProfiles] = useState<Profile[]>([]);
   const [candidateId, setCandidateId] = useState<number | null>(() =>
     initialCandidateId != null && initialCandidateId > 0 ? initialCandidateId : null,
@@ -29,6 +36,7 @@ export function CandidateCheckForms({ token, initialCandidateId, onCandidateCrea
   const [isCreatingCandidate, setIsCreatingCandidate] = useState(false);
   const [isUploadingResume, setIsUploadingResume] = useState(false);
   const [isUploadingTests, setIsUploadingTests] = useState(false);
+  const [isSavingContext, setIsSavingContext] = useState(false);
   const [isRunningAnalysis, setIsRunningAnalysis] = useState(false);
 
   const authHeaders = useMemo(
@@ -57,8 +65,9 @@ export function CandidateCheckForms({ token, initialCandidateId, onCandidateCrea
 
   useEffect(() => {
     if (!token) return;
+    if (isAnalyzeOnly) return;
     loadProfiles();
-  }, [token]);
+  }, [token, isAnalyzeOnly]);
 
   async function loadProfiles() {
     setError("");
@@ -181,9 +190,39 @@ export function CandidateCheckForms({ token, initialCandidateId, onCandidateCrea
     }, 2500);
   }
 
+  async function saveCandidateContext(e: FormEvent<HTMLFormElement>) {
+    e.preventDefault();
+    if (!candidateId || isSavingContext) return;
+    setError("");
+    setInfo("");
+    setIsSavingContext(true);
+    const form = e.currentTarget;
+    const contextText = (form.elements.namedItem("candidate_context") as HTMLTextAreaElement).value;
+    const contextFile = (form.elements.namedItem("context_file") as HTMLInputElement).files?.[0];
+    const payload = new FormData();
+    payload.append("candidate_context", contextText);
+    if (contextFile) payload.append("context_file", contextFile);
+    const response = await fetch(`${API_URL}/recruiter/candidates/${candidateId}/context`, {
+      method: "POST",
+      headers: authHeaders,
+      body: payload,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.detail || "Не удалось сохранить дополнительную информацию");
+      setIsSavingContext(false);
+      return;
+    }
+    const data: CandidateDetail = await response.json();
+    setCandidate(data);
+    setInfo("Дополнительная информация сохранена");
+    setIsSavingContext(false);
+  }
+
   return (
     <>
-      <section className="card">
+      {!isAnalyzeOnly && (
+        <section className="card">
         <h3 className="step-title">Шаг 1. Карточка кандидата</h3>
         {profiles.length === 0 && !isLoadingProfiles && (
           <p className="muted">Список профилей пуст. Сначала создайте профиль должности в разделе «Профили должности».</p>
@@ -213,13 +252,27 @@ export function CandidateCheckForms({ token, initialCandidateId, onCandidateCrea
           </button>
         </p>
       </section>
+      )}
 
       {candidateId != null && candidateId > 0 && (
         <section className="card">
-          <h3 className="step-title">Шаг 2. Файлы и анализ</h3>
+          <h3 className="step-title">{isAnalyzeOnly ? "Карточка кандидата" : "Шаг 2. Файлы и анализ"}</h3>
           <p>
             <strong>ID кандидата:</strong> {candidateId}
           </p>
+          {candidate && (
+            <>
+              <p className="muted">
+                <strong>ФИО:</strong> {candidate.full_name}
+              </p>
+              <p className="muted">
+                <strong>Email:</strong> {candidate.email}
+              </p>
+              <p className="muted">
+                <strong>Профиль должности:</strong> {candidate.position_profile_title || `#${candidate.position_profile_id}`}
+              </p>
+            </>
+          )}
           {candidate?.resume_original_name && (
             <p className="muted">
               <strong>Резюме:</strong> {candidate.resume_original_name}
@@ -252,6 +305,31 @@ export function CandidateCheckForms({ token, initialCandidateId, onCandidateCrea
             disabled={isUploadingTests}
             onChange={(e) => uploadTests(e.target.files)}
           />
+          <label className="field-label">Дополнительная информация о кандидате</label>
+          <p className="muted">
+            Можно указать текстом и/или приложить файл. Для промпта используйте плейсхолдер{" "}
+            <code>{`{{candidate_context}}`}</code>.
+          </p>
+          <form onSubmit={saveCandidateContext}>
+            <textarea
+              name="candidate_context"
+              className="prompt-field"
+              style={{ minHeight: "120px" }}
+              placeholder="Например: важные наблюдения рекрутера, ограничения по графику, детали коммуникации..."
+              defaultValue={candidate?.candidate_context ?? ""}
+              spellCheck={false}
+            />
+            <label className="muted">Файл с дополнительной информацией (Word/Excel/PDF)</label>
+            <input name="context_file" type="file" accept=".doc,.docx,.xls,.xlsx,.pdf" />
+            {candidate?.candidate_context_file_name && (
+              <p className="muted">
+                Текущий файл: <strong>{candidate.candidate_context_file_name}</strong>
+              </p>
+            )}
+            <button type="submit" disabled={isSavingContext}>
+              {isSavingContext ? "Сохраняем..." : "Сохранить дополнительную информацию"}
+            </button>
+          </form>
           <button type="button" onClick={runAnalysis} disabled={isRunningAnalysis}>
             {isRunningAnalysis ? "Анализ запущен, ожидайте..." : "Запустить AI-анализ"}
           </button>

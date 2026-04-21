@@ -54,7 +54,7 @@ export default function CandidateDetailPage() {
           ← К списку кандидатов
         </button>
       </p>
-      <CandidateCheckForms token={token} initialCandidateId={id} />
+      <CandidateCheckForms token={token} initialCandidateId={id} mode="analyze_only" />
     </div>
   );
 }

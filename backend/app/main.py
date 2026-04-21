@@ -99,10 +99,19 @@ def ensure_position_profile_role_context_column() -> None:
         conn.execute(text("ALTER TABLE position_profiles ADD COLUMN IF NOT EXISTS role_context TEXT"))
 
 
+def ensure_candidate_context_columns() -> None:
+    """Для существующих БД без полей дополнительного контекста кандидата."""
+    with engine.begin() as conn:
+        conn.execute(text("ALTER TABLE candidate_cards ADD COLUMN IF NOT EXISTS candidate_context TEXT"))
+        conn.execute(text("ALTER TABLE candidate_cards ADD COLUMN IF NOT EXISTS candidate_context_file_key TEXT"))
+        conn.execute(text("ALTER TABLE candidate_cards ADD COLUMN IF NOT EXISTS candidate_context_file_name TEXT"))
+
+
 @app.on_event("startup")
 def on_startup() -> None:
     Base.metadata.create_all(bind=engine)
     ensure_position_profile_role_context_column()
+    ensure_candidate_context_columns()
     ensure_bucket()
     ensure_single_admin()
 
@@ -189,7 +198,8 @@ def get_prompt_settings(
 ):
     """
     Единый промпт анализа кандидата. Плейсхолдеры:
-    `{{profile_json}}`, `{{test_tasks}}`, `{{resume_text}}`, `{{candidate_test_assignment}}`.
+    `{{profile_json}}`, `{{test_tasks}}`, `{{resume_text}}`, `{{candidate_test_assignment}}`,
+    `{{role_context}}`, `{{candidate_context}}`.
     """
     return PromptSettingsOut(
         candidate_analysis_prompt=get_unified_analysis_prompt(db),
@@ -425,7 +435,20 @@ def create_candidate(
     db.add(card)
     db.commit()
     db.refresh(card)
-    return card
+    profile = db.query(PositionProfile).filter(PositionProfile.id == card.position_profile_id).first()
+    return CandidateOut(
+        id=card.id,
+        full_name=card.full_name,
+        email=card.email,
+        position_profile_id=card.position_profile_id,
+        position_profile_title=profile.title if profile else None,
+        candidate_context=card.candidate_context,
+        candidate_context_file_name=card.candidate_context_file_name,
+        status=card.status,
+        result=card.result,
+        error=card.error,
+        created_at=card.created_at,
+    )
 
 
 @app.post("/recruiter/candidates/{candidate_id}/resume", response_model=CandidateOut)
@@ -475,6 +498,52 @@ async def upload_test_files(
     return {"uploaded": len(files)}
 
 
+@app.post("/recruiter/candidates/{candidate_id}/context", response_model=CandidateDetailOut)
+async def upsert_candidate_context(
+    candidate_id: int,
+    candidate_context: str = Form(""),
+    context_file: UploadFile | None = File(default=None),
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_role(Role.recruiter, Role.admin)),
+):
+    query = db.query(CandidateCard).filter(CandidateCard.id == candidate_id)
+    if actor.role != Role.admin:
+        query = query.filter(CandidateCard.recruiter_id == actor.id)
+    card = query.first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+
+    card.candidate_context = candidate_context.strip() or None
+    if context_file is not None and context_file.filename:
+        payload = await context_file.read()
+        card.candidate_context_file_key = upload_bytes(payload, context_file.filename, "candidates/context")
+        card.candidate_context_file_name = context_file.filename
+    db.commit()
+
+    test_rows = (
+        db.query(CandidateTestFile)
+        .filter(CandidateTestFile.candidate_id == candidate_id)
+        .order_by(CandidateTestFile.id.asc())
+        .all()
+    )
+    profile = db.query(PositionProfile).filter(PositionProfile.id == card.position_profile_id).first()
+    return CandidateDetailOut(
+        id=card.id,
+        full_name=card.full_name,
+        email=card.email,
+        position_profile_id=card.position_profile_id,
+        position_profile_title=profile.title if profile else None,
+        candidate_context=card.candidate_context,
+        candidate_context_file_name=card.candidate_context_file_name,
+        status=card.status,
+        result=card.result,
+        error=card.error,
+        created_at=card.created_at,
+        resume_original_name=_resume_original_name(card.resume_key),
+        test_files=[CandidateTestFileOut.model_validate(t) for t in test_rows],
+    )
+
+
 @app.post("/recruiter/candidates/{candidate_id}/analyze")
 def run_analysis(
     candidate_id: int,
@@ -516,11 +585,15 @@ def get_candidate(
         .order_by(CandidateTestFile.id.asc())
         .all()
     )
+    profile = db.query(PositionProfile).filter(PositionProfile.id == card.position_profile_id).first()
     return CandidateDetailOut(
         id=card.id,
         full_name=card.full_name,
         email=card.email,
         position_profile_id=card.position_profile_id,
+        position_profile_title=profile.title if profile else None,
+        candidate_context=card.candidate_context,
+        candidate_context_file_name=card.candidate_context_file_name,
         status=card.status,
         result=card.result,
         error=card.error,

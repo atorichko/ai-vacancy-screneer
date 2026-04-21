@@ -111,7 +111,8 @@ export default function SettingsPage() {
           Плейсхолдеры: <code>{`{{profile_json}}`}</code> (JSON профиля должности), <code>{`{{test_tasks}}`}</code>{" "}
           (сырой текст описания тестового задания из файла профиля), <code>{`{{resume_text}}`}</code>,{" "}
           <code>{`{{candidate_test_assignment}}`}</code> (тексты файлов ответа кандидата),{" "}
-          <code>{`{{role_context}}`}</code> (короткий контекст роли из карточки профиля должности).
+          <code>{`{{role_context}}`}</code> (короткий контекст роли из карточки профиля должности),{" "}
+          <code>{`{{candidate_context}}`}</code> (дополнительная информация по кандидату: текст и/или файл).
         </p>
         <textarea
           id="prompt-candidate"
