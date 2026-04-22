@@ -1,5 +1,12 @@
+import io
+import json
+import re
+from urllib.parse import quote
+
+from docx import Document
 from fastapi import Depends, FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.security import OAuth2PasswordRequestForm
+from fastapi.responses import StreamingResponse
 from sqlalchemy import or_, text
 from sqlalchemy.orm import Session
 
@@ -47,6 +54,81 @@ def _resume_original_name(resume_key: str | None) -> str | None:
     if "_" in base:
         return base.split("_", 1)[1]
     return base
+
+
+def _safe_filename_part(value: str) -> str:
+    cleaned = re.sub(r"[^\w\- ]+", "", value, flags=re.UNICODE).strip()
+    cleaned = re.sub(r"\s+", "_", cleaned)
+    return cleaned or "candidate"
+
+
+def _finalize_docx_response(document: Document, filename: str) -> StreamingResponse:
+    output = io.BytesIO()
+    document.save(output)
+    output.seek(0)
+    encoded = quote(filename)
+    headers = {
+        "Content-Disposition": f"attachment; filename*=UTF-8''{encoded}",
+    }
+    return StreamingResponse(
+        output,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        headers=headers,
+    )
+
+
+def _append_markdown_table_to_docx(document: Document, table_lines: list[str]) -> None:
+    rows: list[list[str]] = []
+    for line in table_lines:
+        if "|" not in line:
+            continue
+        raw_cells = [cell.strip() for cell in line.strip().strip("|").split("|")]
+        rows.append(raw_cells)
+    if len(rows) < 2:
+        for line in table_lines:
+            if line.strip():
+                document.add_paragraph(line.strip())
+        return
+    header, body = rows[0], rows[2:] if len(rows) > 1 else []
+    table = document.add_table(rows=1 + len(body), cols=len(header))
+    table.style = "Table Grid"
+    for i, cell in enumerate(header):
+        table.rows[0].cells[i].text = cell
+    for r_idx, row in enumerate(body, start=1):
+        for c_idx in range(len(header)):
+            table.rows[r_idx].cells[c_idx].text = row[c_idx] if c_idx < len(row) else ""
+
+
+def _append_markdown_to_docx(document: Document, markdown: str) -> None:
+    lines = markdown.splitlines()
+    table_buffer: list[str] = []
+    for line in lines:
+        stripped = line.strip()
+        if "|" in line and stripped:
+            table_buffer.append(line)
+            continue
+        if table_buffer:
+            _append_markdown_table_to_docx(document, table_buffer)
+            table_buffer = []
+            document.add_paragraph("")
+        if not stripped:
+            document.add_paragraph("")
+            continue
+        if stripped.startswith("### "):
+            document.add_heading(stripped[4:].strip(), level=3)
+            continue
+        if stripped.startswith("## "):
+            document.add_heading(stripped[3:].strip(), level=2)
+            continue
+        if stripped.startswith("# "):
+            document.add_heading(stripped[2:].strip(), level=1)
+            continue
+        if stripped.startswith("- ") or stripped.startswith("* "):
+            document.add_paragraph(stripped[2:].strip(), style="List Bullet")
+            continue
+        document.add_paragraph(stripped)
+    if table_buffer:
+        _append_markdown_table_to_docx(document, table_buffer)
 
 
 def ensure_single_admin() -> None:
@@ -563,6 +645,12 @@ def run_analysis(
         raise HTTPException(status_code=400, detail="Сначала загрузите хотя бы один файл тестового задания")
     if card.status == CandidateStatus.processing:
         raise HTTPException(status_code=400, detail="Анализ уже выполняется")
+    # Сразу фиксируем переход в processing, чтобы UI не зависал в draft,
+    # даже если worker забрал задачу с задержкой.
+    card.status = CandidateStatus.processing
+    card.error = None
+    card.result = None
+    db.commit()
     task = analyze_candidate_task.delay(candidate_id)
     return {"task_id": task.id}
 
@@ -601,6 +689,44 @@ def get_candidate(
         resume_original_name=_resume_original_name(card.resume_key),
         test_files=[CandidateTestFileOut.model_validate(t) for t in test_rows],
     )
+
+
+@app.get("/recruiter/candidates/{candidate_id}/report.docx")
+def export_candidate_report_docx(
+    candidate_id: int,
+    db: Session = Depends(get_db),
+    actor: User = Depends(require_role(Role.recruiter, Role.admin)),
+):
+    query = db.query(CandidateCard).filter(CandidateCard.id == candidate_id)
+    if actor.role != Role.admin:
+        query = query.filter(CandidateCard.recruiter_id == actor.id)
+    card = query.first()
+    if not card:
+        raise HTTPException(status_code=404, detail="Кандидат не найден")
+    if card.status != CandidateStatus.done or not card.result:
+        raise HTTPException(status_code=400, detail="Экспорт доступен только для завершенного AI-анализа")
+
+    profile = db.query(PositionProfile).filter(PositionProfile.id == card.position_profile_id).first()
+
+    doc = Document()
+    doc.add_heading("Отчет AI-анализа кандидата", level=1)
+    doc.add_paragraph(f"Кандидат: {card.full_name}")
+    doc.add_paragraph(f"Email: {card.email}")
+    doc.add_paragraph(f"Профиль должности: {profile.title if profile else card.position_profile_id}")
+    doc.add_paragraph(f"Статус: {card.status.value if hasattr(card.status, 'value') else str(card.status)}")
+    doc.add_paragraph("")
+
+    markdown = card.result.get("markdown") if isinstance(card.result, dict) else None
+    if isinstance(markdown, str) and markdown.strip():
+        _append_markdown_to_docx(doc, markdown)
+    else:
+        doc.add_heading("Результат анализа", level=2)
+        doc.add_paragraph(
+            json.dumps(card.result, ensure_ascii=False, indent=2) if isinstance(card.result, dict) else str(card.result)
+        )
+
+    filename = f"candidate_report_{card.id}_{_safe_filename_part(card.full_name)}.docx"
+    return _finalize_docx_response(doc, filename)
 
 
 @app.delete("/recruiter/candidates/{candidate_id}")

@@ -46,7 +46,18 @@ export function CandidateAnalysisResult({ result }: { result: Record<string, unk
   if (typeof md === "string" && md.trim()) {
     return (
       <div className="markdown-analysis">
-        <ReactMarkdown remarkPlugins={[remarkGfm]}>{md}</ReactMarkdown>
+        <ReactMarkdown
+          remarkPlugins={[remarkGfm]}
+          components={{
+            table: ({ node: _node, ...props }) => (
+              <div className="markdown-table-scroll">
+                <table {...props} />
+              </div>
+            ),
+          }}
+        >
+          {md}
+        </ReactMarkdown>
       </div>
     );
   }

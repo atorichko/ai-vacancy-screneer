@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useCallback, useEffect, useMemo, useState } from "react";
+import { FormEvent, useCallback, useEffect, useMemo, useRef, useState } from "react";
 
 import { CandidateAnalysisResult, CandidateDetail, STATUS_LABELS } from "./candidate-shared";
 
@@ -16,6 +16,7 @@ type Props = {
   initialCandidateId: number | null;
   onCandidateCreated?: (id: number) => void;
   mode?: "create_and_analyze" | "analyze_only";
+  onCandidateLoaded?: (candidate: CandidateDetail) => void;
 };
 
 export function CandidateCheckForms({
@@ -23,6 +24,7 @@ export function CandidateCheckForms({
   initialCandidateId,
   onCandidateCreated,
   mode = "create_and_analyze",
+  onCandidateLoaded,
 }: Props) {
   const isAnalyzeOnly = mode === "analyze_only";
   const [profiles, setProfiles] = useState<Profile[]>([]);
@@ -38,6 +40,12 @@ export function CandidateCheckForms({
   const [isUploadingTests, setIsUploadingTests] = useState(false);
   const [isSavingContext, setIsSavingContext] = useState(false);
   const [isRunningAnalysis, setIsRunningAnalysis] = useState(false);
+  const [isExportingReport, setIsExportingReport] = useState(false);
+  const [analysisProgress, setAnalysisProgress] = useState(0);
+
+  const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const analysisStartedAtRef = useRef<number | null>(null);
 
   const authHeaders = useMemo(
     () => ({
@@ -46,14 +54,75 @@ export function CandidateCheckForms({
     [token],
   );
 
+  const clearAnalysisTimers = useCallback(() => {
+    if (pollIntervalRef.current) {
+      clearInterval(pollIntervalRef.current);
+      pollIntervalRef.current = null;
+    }
+    if (progressIntervalRef.current) {
+      clearInterval(progressIntervalRef.current);
+      progressIntervalRef.current = null;
+    }
+    analysisStartedAtRef.current = null;
+  }, []);
+
+  const startProgressTicker = useCallback(() => {
+    if (progressIntervalRef.current) return;
+    progressIntervalRef.current = setInterval(() => {
+      setAnalysisProgress((prev) => {
+        if (prev < 55) return prev + 5;
+        if (prev < 80) return prev + 2;
+        if (prev < 94) return prev + 1;
+        return prev;
+      });
+    }, 1200);
+  }, []);
+
+  const startAnalysisPolling = useCallback(
+    (id: number) => {
+      if (pollIntervalRef.current) return;
+      startProgressTicker();
+      const startedAt = analysisStartedAtRef.current ?? Date.now();
+      pollIntervalRef.current = setInterval(async () => {
+        const response = await fetch(`${API_URL}/recruiter/candidates/${id}`, {
+          headers: authHeaders,
+        });
+        if (!response.ok) return;
+        const data: CandidateDetail = await response.json();
+        setCandidate(data);
+        onCandidateLoaded?.(data);
+        const elapsedMs = Date.now() - startedAt;
+        const stuckInDraftTooLong = data.status === "draft" && elapsedMs > 20_000;
+        const stuckInProcessingTooLong = data.status === "processing" && elapsedMs > 10 * 60_000;
+        if (stuckInDraftTooLong || stuckInProcessingTooLong) {
+          clearAnalysisTimers();
+          setIsRunningAnalysis(false);
+          setAnalysisProgress(0);
+          setError(
+            "Анализ не стартовал или завис в очереди. Проверьте состояние worker/redis и перезапустите анализ.",
+          );
+          return;
+        }
+        if (data.status === "done" || data.status === "failed") {
+          clearAnalysisTimers();
+          setAnalysisProgress(100);
+          setInfo(`Анализ завершен. Статус: ${STATUS_LABELS[data.status] || data.status}`);
+          setIsRunningAnalysis(false);
+        }
+      }, 2500);
+    },
+    [authHeaders, clearAnalysisTimers, onCandidateLoaded, startProgressTicker],
+  );
+
   const refreshCandidate = useCallback(
     async (id: number) => {
       const response = await fetch(`${API_URL}/recruiter/candidates/${id}`, { headers: authHeaders });
       if (!response.ok) return;
       const data: CandidateDetail = await response.json();
       setCandidate(data);
+      onCandidateLoaded?.(data);
     },
-    [authHeaders],
+    [authHeaders, onCandidateLoaded],
   );
 
   useEffect(() => {
@@ -163,7 +232,10 @@ export function CandidateCheckForms({
     setInfo("");
     if (!candidateId) return;
     if (isRunningAnalysis) return;
+    clearAnalysisTimers();
+    setAnalysisProgress(6);
     setIsRunningAnalysis(true);
+    analysisStartedAtRef.current = Date.now();
     const runResponse = await fetch(`${API_URL}/recruiter/candidates/${candidateId}/analyze`, {
       method: "POST",
       headers: authHeaders,
@@ -171,23 +243,13 @@ export function CandidateCheckForms({
     if (!runResponse.ok) {
       const data = await runResponse.json().catch(() => ({}));
       setError(data.detail || "Не удалось запустить анализ");
+      clearAnalysisTimers();
+      setAnalysisProgress(0);
       setIsRunningAnalysis(false);
       return;
     }
     setInfo("AI-анализ запущен");
-    const interval = setInterval(async () => {
-      const response = await fetch(`${API_URL}/recruiter/candidates/${candidateId}`, {
-        headers: authHeaders,
-      });
-      if (!response.ok) return;
-      const data: CandidateDetail = await response.json();
-      setCandidate(data);
-      if (data.status === "done" || data.status === "failed") {
-        clearInterval(interval);
-        setInfo(`Анализ завершен. Статус: ${STATUS_LABELS[data.status] || data.status}`);
-        setIsRunningAnalysis(false);
-      }
-    }, 2500);
+    startAnalysisPolling(candidateId);
   }
 
   async function saveCandidateContext(e: FormEvent<HTMLFormElement>) {
@@ -218,6 +280,66 @@ export function CandidateCheckForms({
     setInfo("Дополнительная информация сохранена");
     setIsSavingContext(false);
   }
+
+  async function exportReport() {
+    if (!candidateId || isExportingReport) return;
+    setError("");
+    setInfo("");
+    setIsExportingReport(true);
+    const response = await fetch(`${API_URL}/recruiter/candidates/${candidateId}/report.docx`, {
+      headers: authHeaders,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.detail || "Не удалось выгрузить отчет");
+      setIsExportingReport(false);
+      return;
+    }
+    const blob = await response.blob();
+    const href = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `candidate_report_${candidateId}.docx`;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    window.URL.revokeObjectURL(href);
+    setInfo("Отчет выгружен в DOCX");
+    setIsExportingReport(false);
+  }
+
+  useEffect(() => {
+    if (candidate?.status === "processing" && candidateId != null) {
+      setIsRunningAnalysis(true);
+      setAnalysisProgress((prev) => (prev > 0 ? prev : 12));
+      startAnalysisPolling(candidateId);
+      return;
+    }
+    if (candidate?.status === "done" || candidate?.status === "failed") {
+      clearAnalysisTimers();
+      setIsRunningAnalysis(false);
+      setAnalysisProgress(0);
+    }
+  }, [candidate?.status, candidateId, clearAnalysisTimers, startAnalysisPolling]);
+
+  useEffect(() => {
+    return () => {
+      clearAnalysisTimers();
+    };
+  }, [clearAnalysisTimers]);
+
+  const showAnalysisProgress = isRunningAnalysis || candidate?.status === "processing";
+  const normalizedProgress = Math.max(1, Math.min(analysisProgress, 100));
+  const analysisStageText =
+    normalizedProgress < 20
+      ? "Этап 1/4: подготовка данных кандидата"
+      : normalizedProgress < 45
+        ? "Этап 2/4: сбор и сжатие контекста для AI"
+        : normalizedProgress < 80
+          ? "Этап 3/4: AI анализирует резюме и тестовые файлы"
+          : normalizedProgress < 100
+            ? "Этап 4/4: формируем итоговый отчет"
+            : "Завершаем анализ и сохраняем результат";
 
   return (
     <>
@@ -333,6 +455,22 @@ export function CandidateCheckForms({
           <button type="button" onClick={runAnalysis} disabled={isRunningAnalysis}>
             {isRunningAnalysis ? "Анализ запущен, ожидайте..." : "Запустить AI-анализ"}
           </button>
+          {showAnalysisProgress && (
+            <div className="analysis-progress-box" role="status" aria-live="polite">
+              <p className="muted analysis-progress-label">AI-анализ в процессе, это может занять до нескольких минут</p>
+              <div
+                className="analysis-progress-track"
+                role="progressbar"
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-valuenow={normalizedProgress}
+              >
+                <div className="analysis-progress-fill" style={{ width: `${normalizedProgress}%` }} />
+              </div>
+              <p className="muted analysis-progress-stage">{analysisStageText}</p>
+              <p className="muted">{normalizedProgress}%</p>
+            </div>
+          )}
         </section>
       )}
 
@@ -342,7 +480,12 @@ export function CandidateCheckForms({
         candidate.result &&
         Object.keys(candidate.result).length > 0 && (
           <section className="card">
-            <h3 className="step-title">Результат AI-анализа</h3>
+            <div className="analysis-result-header">
+              <h3 className="step-title">Результат AI-анализа</h3>
+              <button type="button" className="inline-button" onClick={exportReport} disabled={isExportingReport}>
+                {isExportingReport ? "Готовим DOCX..." : "Экспорт отчета"}
+              </button>
+            </div>
             <CandidateAnalysisResult result={candidate.result} />
           </section>
         )}

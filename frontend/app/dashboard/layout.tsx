@@ -25,6 +25,33 @@ export default function DashboardLayout({ children }: { children: ReactNode }) {
     setChecked(true);
   }, []);
 
+  useEffect(() => {
+    if (!pathname) return;
+    const baseTitle = "MVP подбора персонала";
+    const normalizedPath = pathname.startsWith("/recruitment-mvp")
+      ? pathname.replace("/recruitment-mvp", "") || "/"
+      : pathname;
+    const staticTitles: Record<string, string> = {
+      "/dashboard": "Рабочий кабинет",
+      "/dashboard/users": "Пользователи",
+      "/dashboard/profiles": "Профили должности",
+      "/dashboard/settings": "Настройки промптов",
+      "/dashboard/candidates": "Кандидаты",
+    };
+    if (staticTitles[normalizedPath]) {
+      document.title = `${staticTitles[normalizedPath]} | ${baseTitle}`;
+      return;
+    }
+    if (normalizedPath.startsWith("/dashboard/profiles/")) {
+      document.title = `Профиль должности | ${baseTitle}`;
+      return;
+    }
+    if (normalizedPath.startsWith("/dashboard/candidates/")) {
+      // Детальная страница кандидата задает title после загрузки ФИО.
+      document.title = `Анализ кандидата | ${baseTitle}`;
+    }
+  }, [pathname]);
+
   const menuItems = useMemo(() => {
     const items: Array<{ path: string; label: string; adminOnly?: boolean }> = [
       { path: "/dashboard/users", label: "Пользователи", adminOnly: true },

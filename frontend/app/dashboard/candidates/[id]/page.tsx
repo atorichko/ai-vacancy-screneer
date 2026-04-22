@@ -1,9 +1,10 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useParams } from "next/navigation";
 
 import { CandidateCheckForms } from "../candidate-check-forms";
+import { CandidateDetail } from "../candidate-shared";
 
 export default function CandidateDetailPage() {
   const params = useParams();
@@ -11,6 +12,7 @@ export default function CandidateDetailPage() {
   const id = typeof raw === "string" ? Number(raw) : NaN;
   const [token, setToken] = useState("");
   const [checked, setChecked] = useState(false);
+  const [candidateName, setCandidateName] = useState("");
 
   useEffect(() => {
     const basePath = window.location.pathname.startsWith("/recruitment-mvp") ? "/recruitment-mvp" : "";
@@ -31,6 +33,19 @@ export default function CandidateDetailPage() {
       window.location.href = `${basePath}/dashboard/candidates`;
     }
   }, [checked, id]);
+
+  useEffect(() => {
+    const baseTitle = "MVP подбора персонала";
+    if (candidateName.trim()) {
+      document.title = `Анализ ${candidateName} | ${baseTitle}`;
+      return;
+    }
+    document.title = `Анализ кандидата | ${baseTitle}`;
+  }, [candidateName]);
+
+  const handleCandidateLoaded = useCallback((candidate: CandidateDetail) => {
+    setCandidateName(candidate.full_name || "");
+  }, []);
 
   if (!checked) {
     return <p>Проверка авторизации...</p>;
@@ -54,7 +69,12 @@ export default function CandidateDetailPage() {
           ← К списку кандидатов
         </button>
       </p>
-      <CandidateCheckForms token={token} initialCandidateId={id} mode="analyze_only" />
+      <CandidateCheckForms
+        token={token}
+        initialCandidateId={id}
+        mode="analyze_only"
+        onCandidateLoaded={handleCandidateLoaded}
+      />
     </div>
   );
 }

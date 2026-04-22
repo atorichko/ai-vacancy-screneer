@@ -91,7 +91,7 @@ bash deploy/deploy-vds.sh
 - Для публикации под nginx-префиксом `/recruitment-mvp` выставьте:
 
 ```env
-NEXT_PUBLIC_API_URL=http://185.28.85.131/recruitment-mvp-api
+NEXT_PUBLIC_API_URL=/recruitment-mvp-api
 API_ROOT_PATH=/recruitment-mvp-api
 ```
 
@@ -104,16 +104,55 @@ API_ROOT_PATH=/recruitment-mvp-api
 
 Он делает следующее:
 
-- `http://185.28.85.131/` — остается вашим текущим лендингом;
-- `http://185.28.85.131/recruitment-mvp` — фронтенд Recruitment MVP;
-- `http://185.28.85.131/recruitment-mvp/dashboard` — кабинет после авторизации;
-- `http://185.28.85.131/recruitment-mvp-api/docs` — Swagger backend.
+- `https://atorichko.asur-adigital.ru/recruitment-mvp` — фронтенд Recruitment MVP;
+- `https://atorichko.asur-adigital.ru/recruitment-mvp/dashboard` — кабинет после авторизации;
+- `https://atorichko.asur-adigital.ru/recruitment-mvp-api/docs` — Swagger backend;
+- `http://185.28.85.131/recruitment-mvp...` и `http://185.28.85.131/recruitment-mvp-api...` — 301 редирект на новый HTTPS-домен.
 
 Применение на сервере:
 
 ```bash
 sudo cp /var/www/recruitment-mvp/deploy/nginx-recruitment-mvp.conf /etc/nginx/sites-available/recruitment-mvp.conf
 sudo ln -sf /etc/nginx/sites-available/recruitment-mvp.conf /etc/nginx/sites-enabled/recruitment-mvp.conf
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+Если SSL-сертификат для `atorichko.asur-adigital.ru` еще не выпущен:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y certbot python3-certbot-nginx
+sudo certbot --nginx -d atorichko.asur-adigital.ru
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+### Единый nginx-конфиг для всех проектов на одном домене
+
+Если на VDS крутится несколько приложений на `atorichko.asur-adigital.ru`, используйте единый файл:
+
+- `deploy/nginx-atorichko-unified.conf`
+
+Он обслуживает:
+
+- `/`
+- `/image-resize/`
+- `/ymaps-app/`
+- `/recruitment-mvp/` (и `/recruitment-mvp-api/`)
+
+Перед включением:
+
+1. Проверьте upstream-порты в начале файла (`app_root_image_resize`, `app_ymaps`, `app_recruitment_frontend`, `app_recruitment_api`).
+2. Убедитесь, что для домена включен только один `server_name atorichko.asur-adigital.ru` на `80/443`.
+
+Применение:
+
+```bash
+sudo cp /var/www/recruitment-mvp/deploy/nginx-atorichko-unified.conf /etc/nginx/sites-available/atorichko.asur-adigital.ru.conf
+sudo ln -sf /etc/nginx/sites-available/atorichko.asur-adigital.ru.conf /etc/nginx/sites-enabled/atorichko.asur-adigital.ru.conf
+# отключите старые дубли с тем же server_name:
+sudo grep -Rns "server_name .*atorichko.asur-adigital.ru" /etc/nginx/sites-enabled
 sudo nginx -t
 sudo systemctl reload nginx
 ```
