@@ -46,6 +46,7 @@ export function CandidateCheckForms({
   const pollIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const progressIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const analysisStartedAtRef = useRef<number | null>(null);
+  const contextFormRef = useRef<HTMLFormElement | null>(null);
 
   const authHeaders = useMemo(
     () => ({
@@ -227,11 +228,41 @@ export function CandidateCheckForms({
     setIsUploadingTests(false);
   }
 
+  async function persistCandidateContext(form: HTMLFormElement): Promise<boolean> {
+    if (!candidateId || isSavingContext) return false;
+    setIsSavingContext(true);
+    const contextText = (form.elements.namedItem("candidate_context") as HTMLTextAreaElement).value;
+    const contextFile = (form.elements.namedItem("context_file") as HTMLInputElement).files?.[0];
+    const payload = new FormData();
+    payload.append("candidate_context", contextText);
+    if (contextFile) payload.append("context_file", contextFile);
+    const response = await fetch(`${API_URL}/recruiter/candidates/${candidateId}/context`, {
+      method: "POST",
+      headers: authHeaders,
+      body: payload,
+    });
+    if (!response.ok) {
+      const data = await response.json().catch(() => ({}));
+      setError(data.detail || "Не удалось сохранить дополнительную информацию");
+      setIsSavingContext(false);
+      return false;
+    }
+    const data: CandidateDetail = await response.json();
+    setCandidate(data);
+    onCandidateLoaded?.(data);
+    setIsSavingContext(false);
+    return true;
+  }
+
   async function runAnalysis() {
     setError("");
     setInfo("");
     if (!candidateId) return;
     if (isRunningAnalysis) return;
+    if (contextFormRef.current) {
+      const saved = await persistCandidateContext(contextFormRef.current);
+      if (!saved) return;
+    }
     clearAnalysisTimers();
     setAnalysisProgress(6);
     setIsRunningAnalysis(true);
@@ -254,31 +285,11 @@ export function CandidateCheckForms({
 
   async function saveCandidateContext(e: FormEvent<HTMLFormElement>) {
     e.preventDefault();
-    if (!candidateId || isSavingContext) return;
+    if (!candidateId) return;
     setError("");
     setInfo("");
-    setIsSavingContext(true);
-    const form = e.currentTarget;
-    const contextText = (form.elements.namedItem("candidate_context") as HTMLTextAreaElement).value;
-    const contextFile = (form.elements.namedItem("context_file") as HTMLInputElement).files?.[0];
-    const payload = new FormData();
-    payload.append("candidate_context", contextText);
-    if (contextFile) payload.append("context_file", contextFile);
-    const response = await fetch(`${API_URL}/recruiter/candidates/${candidateId}/context`, {
-      method: "POST",
-      headers: authHeaders,
-      body: payload,
-    });
-    if (!response.ok) {
-      const data = await response.json().catch(() => ({}));
-      setError(data.detail || "Не удалось сохранить дополнительную информацию");
-      setIsSavingContext(false);
-      return;
-    }
-    const data: CandidateDetail = await response.json();
-    setCandidate(data);
-    setInfo("Дополнительная информация сохранена");
-    setIsSavingContext(false);
+    const saved = await persistCandidateContext(e.currentTarget);
+    if (saved) setInfo("Дополнительная информация сохранена");
   }
 
   async function exportReport() {
@@ -432,7 +443,7 @@ export function CandidateCheckForms({
             Можно указать текстом и/или приложить файл. Для промпта используйте плейсхолдер{" "}
             <code>{`{{candidate_context}}`}</code>.
           </p>
-          <form onSubmit={saveCandidateContext}>
+          <form ref={contextFormRef} onSubmit={saveCandidateContext}>
             <textarea
               name="candidate_context"
               className="prompt-field"
