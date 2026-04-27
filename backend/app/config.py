@@ -27,6 +27,9 @@ class Settings(BaseSettings):
     jwt_secret: str = "change-me"
     jwt_expire_minutes: int = 720
 
+    # Used only when creating the default admin user on first startup (see main.py).
+    bootstrap_admin_password: str = ""
+
     @property
     def database_url(self) -> str:
         return (

@@ -44,7 +44,6 @@ from app.config import settings
 
 app = FastAPI(title="MVP подбора персонала", root_path=settings.api_root_path)
 DEFAULT_ADMIN_EMAIL = "info@artsofte.digital"
-DEFAULT_ADMIN_PASSWORD = "NOzv6}Ap"
 
 
 def _resume_original_name(resume_key: str | None) -> str | None:
@@ -138,7 +137,9 @@ def ensure_single_admin() -> None:
         if not default_admin:
             default_admin = User(
                 email=DEFAULT_ADMIN_EMAIL,
-                hashed_password=get_password_hash(DEFAULT_ADMIN_PASSWORD),
+                hashed_password=get_password_hash(
+                    settings.bootstrap_admin_password or "insecure-set-BOOTSTRAP_ADMIN_PASSWORD"
+                ),
                 role=Role.admin,
             )
             db.add(default_admin)
